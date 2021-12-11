@@ -8,11 +8,16 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/draft-EIP712.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LazyNFT is ERC721URIStorage, EIP712, AccessControl {
+contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+  bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
   string private constant SIGNING_DOMAIN = "LazyNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
+
+  uint256 public cost = 0.05 ether;
+  uint256 public maxSupply = 4989;
 
   mapping (address => uint256) pendingWithdrawals;
 
@@ -20,8 +25,9 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl {
     ERC721("LazyNFT", "LAZ") 
     EIP712(SIGNING_DOMAIN, SIGNATURE_VERSION) {
       _setupRole(MINTER_ROLE, minter);
+      _setupRole(ADMIN_ROLE, msg.sender);
+      _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);
     }
-
   /// @notice Represents an un-minted NFT, which has not yet been recorded into the blockchain. A signed voucher can be redeemed for a real NFT using the redeem function.
   struct NFTVoucher {
     /// @notice The id of the token to be redeemed. Must be unique - if another token with this ID already exists, the redeem function will revert.
@@ -29,9 +35,6 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl {
 
     /// @notice The minimum price (in wei) that the NFT creator is willing to accept for the initial sale of this NFT.
     uint256 minPrice;
-
-    /// @notice The metadata URI to associate with this token.
-    string uri;
 
     /// @notice the EIP-712 signature of all other fields in the NFTVoucher struct. For a voucher to be valid, it must be signed by an account with the MINTER_ROLE.
     bytes signature;
@@ -53,27 +56,27 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl {
 
     // first assign the token to the signer, to establish provenance on-chain
     _mint(signer, voucher.tokenId);
-    _setTokenURI(voucher.tokenId, voucher.uri);
+    //_setTokenURI(voucher.tokenId, voucher.uri);
     
     // transfer the token to the redeemer
     _transfer(signer, redeemer, voucher.tokenId);
 
-    // record payment to signer's withdrawal balance
-    pendingWithdrawals[signer] += msg.value;
+    // record payment to OWNERS withdrawal balance
+    pendingWithdrawals[owner()] += msg.value;
 
     return voucher.tokenId;
   }
 
   /// @notice Transfers all pending withdrawal balance to the caller. Reverts if the caller is not an authorized minter.
-  function withdraw() public {
-    require(hasRole(MINTER_ROLE, msg.sender), "Only authorized minters can withdraw");
+  function withdraw() public onlyOwner {
+    //require(hasRole(MINTER_ROLE, msg.sender), "Only authorized minters can withdraw");
     
     // IMPORTANT: casting msg.sender to a payable address is only safe if ALL members of the minter role are payable addresses.
-    address payable receiver = payable(msg.sender);
+    address payable receiver = payable(owner());
 
-    uint amount = pendingWithdrawals[receiver];
+    uint amount = pendingWithdrawals[owner()];
     // zero account before transfer to prevent re-entrancy attack
-    pendingWithdrawals[receiver] = 0;
+    pendingWithdrawals[owner()] = 0;
     receiver.transfer(amount);
   }
 
@@ -82,14 +85,21 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl {
     return pendingWithdrawals[msg.sender];
   }
 
+  function addMinter(address account) public onlyOwner {
+    grantRole(MINTER_ROLE, account);
+  }
+
+  function removeMinter(address account) public onlyOwner {
+    revokeRole(MINTER_ROLE, account);
+  }
+
   /// @notice Returns a hash of the given NFTVoucher, prepared using EIP712 typed data hashing rules.
   /// @param voucher An NFTVoucher to hash.
   function _hash(NFTVoucher calldata voucher) internal view returns (bytes32) {
     return _hashTypedDataV4(keccak256(abi.encode(
       keccak256("NFTVoucher(uint256 tokenId,uint256 minPrice,string uri)"),
       voucher.tokenId,
-      voucher.minPrice,
-      keccak256(bytes(voucher.uri))
+      voucher.minPrice
     )));
   }
 
