@@ -11,13 +11,15 @@ import "@openzeppelin/contracts/utils/cryptography/draft-EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
+
   bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
   string private constant SIGNING_DOMAIN = "LazyNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
-
-  uint256 public cost = 0.05 ether;
-  uint256 public maxSupply = 4989;
+  string private constant oneOfOneReservedUri = "";
+  string private constant mainUri = "";
+  uint256 private constant maxSupply = 4989;
+  uint256 private mintedCount = 0;
 
   mapping (address => uint256) pendingWithdrawals;
 
@@ -48,6 +50,9 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     // make sure signature is valid and get the address of the signer
     address signer = _verify(voucher);
 
+    // cant mint more than max
+    require(mintedCount < maxSupply, "max supply reached");
+
     // make sure that the signer is authorized to mint NFTs
     require(hasRole(MINTER_ROLE, signer), "Signature invalid or unauthorized");
 
@@ -56,7 +61,8 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
 
     // first assign the token to the signer, to establish provenance on-chain
     _mint(signer, voucher.tokenId);
-    //_setTokenURI(voucher.tokenId, voucher.uri);
+    mintedCount += 1;
+    _setTokenURI(voucher.tokenId, mainUri);
     
     // transfer the token to the redeemer
     _transfer(signer, redeemer, voucher.tokenId);
@@ -64,6 +70,7 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     // record payment to OWNERS withdrawal balance
     pendingWithdrawals[owner()] += msg.value;
 
+    // should return tokenID of minted NFT upon success
     return voucher.tokenId;
   }
 
@@ -91,6 +98,13 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
 
   function removeMinter(address account) public onlyOwner {
     revokeRole(MINTER_ROLE, account);
+  }
+
+  function mintOneOfOneReserved(uint256 tokenId) public onlyOwner returns (uint256)
+  {
+      _mint(owner(), tokenId);
+      _setTokenURI(tokenId, oneOfOneReservedUri);
+      return tokenId;
   }
 
   /// @notice Returns a hash of the given NFTVoucher, prepared using EIP712 typed data hashing rules.
