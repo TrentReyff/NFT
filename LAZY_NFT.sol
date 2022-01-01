@@ -18,7 +18,7 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   string private constant SIGNATURE_VERSION = "1";
   string private constant oneOfOneReservedUri = "";
   string private constant mainUri = "";
-  uint256 private constant maxSupply = 5000;
+  uint256 private constant maxSupply = 4989;
   uint256 private mintedCount = 0;
   uint256[] private redeemedVouchers;
 
