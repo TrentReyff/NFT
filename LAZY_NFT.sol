@@ -20,8 +20,7 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   string private constant mainUri = "";
   uint256 private constant maxSupply = 4989;
   uint256 private mintedCount = 0;
-
-  mapping (address => uint256) pendingWithdrawals;
+  uint256[] private redeemedVouchers;
 
   constructor(address payable minter)
     ERC721("LazyNFT", "LAZ") 
@@ -32,64 +31,80 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     }
   /// @notice Represents an un-minted NFT, which has not yet been recorded into the blockchain. A signed voucher can be redeemed for a real NFT using the redeem function.
   struct NFTVoucher {
-    /// @notice The id of the token to be redeemed. Must be unique - if another token with this ID already exists, the redeem function will revert.
-    uint256 tokenId;
+    /// @notice Voucher ID, used to keep track of which vouchers have been claimed, and prevent them from being used more than once.
+    uint256 id;
 
-    /// @notice The minimum price (in wei) that the NFT creator is willing to accept for the initial sale of this NFT.
+    /// @notice The number of tokens to mint. 
+    uint256 numberToMint;
+
+    /// @notice The minimum price (in wei) that must be paid to mint EACH NFT. Total price will be minPrice * numberToMint
     uint256 minPrice;
 
     /// @notice the EIP-712 signature of all other fields in the NFTVoucher struct. For a voucher to be valid, it must be signed by an account with the MINTER_ROLE.
     bytes signature;
   }
 
-
   /// @notice Redeems an NFTVoucher for an actual NFT, creating it in the process.
   /// @param redeemer The address of the account which will receive the NFT upon success.
   /// @param voucher A signed NFTVoucher that describes the NFT to be redeemed.
-  function redeem(address redeemer, NFTVoucher calldata voucher) public payable returns (uint256) {
+  function redeem(address redeemer, NFTVoucher calldata voucher) public payable {
     // make sure signature is valid and get the address of the signer
     address signer = _verify(voucher);
-
-    // cant mint more than max
-    require(mintedCount < maxSupply, "max supply reached");
 
     // make sure that the signer is authorized to mint NFTs
     require(hasRole(MINTER_ROLE, signer), "Signature invalid or unauthorized");
 
+    // cant mint more than max
+    require(mintedCount + voucher.numberToMint <= maxSupply, "max supply reached");
+
     // make sure that the redeemer is paying enough to cover the buyer's cost
-    require(msg.value >= voucher.minPrice, "Insufficient funds to redeem");
+    require(msg.value >= voucher.minPrice * voucher.numberToMint, "Insufficient funds to redeem");
 
-    // first assign the token to the signer, to establish provenance on-chain
-    _mint(signer, voucher.tokenId);
-    mintedCount += 1;
-    _setTokenURI(voucher.tokenId, mainUri);
-    
-    // transfer the token to the redeemer
-    _transfer(signer, redeemer, voucher.tokenId);
+    // make sure they didn't put in a negative number somehow...
+    require(voucher.numberToMint > 0, "Must mint at least one NFT");
 
-    // record payment to OWNERS withdrawal balance
-    pendingWithdrawals[owner()] += msg.value;
+    // Make sure they can't mint more then 10 at once
+    require(voucher.numberToMint <= 10, "Can't mint more than ten NFTs at a time");
 
-    // should return tokenID of minted NFT upon success
-    return voucher.tokenId;
+    require(!hasBeenRedeemed(voucher.id), "Voucher has already been redeemed.");
+
+    redeemedVouchers.push(voucher.id);
+
+    // Set the tokenID to the last tokenID, we'll increment it before creating a new one in the loop below.
+    uint256 tokenID = mintedCount;
+
+    for (uint256 i = 0; i < voucher.numberToMint; i++) {
+      tokenID++;
+
+      // first assign the token to the signer, to establish provenance on-chain
+      _mint(signer, tokenID);
+      mintedCount += 1;
+      _setTokenURI(tokenID, mainUri);
+      
+      // transfer the token to the redeemer
+      _transfer(signer, redeemer, tokenID);
+    }
+  }
+
+  // Checks the list of redeemed voucher IDs to see if the voucherID specified is in there.
+  function hasBeenRedeemed(uint256 voucherID) public view returns (bool) {
+    for (uint256 i = 0; i < redeemedVouchers.length; i++) {
+      if (redeemedVouchers[i] == voucherID) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /// @notice Transfers all pending withdrawal balance to the caller. Reverts if the caller is not an authorized minter.
   function withdraw() public onlyOwner {
-    //require(hasRole(MINTER_ROLE, msg.sender), "Only authorized minters can withdraw");
-    
-    // IMPORTANT: casting msg.sender to a payable address is only safe if ALL members of the minter role are payable addresses.
-    address payable receiver = payable(owner());
-
-    uint amount = pendingWithdrawals[owner()];
-    // zero account before transfer to prevent re-entrancy attack
-    pendingWithdrawals[owner()] = 0;
-    receiver.transfer(amount);
+    payable(msg.sender).transfer(address(this).balance);
   }
 
   /// @notice Retuns the amount of Ether available to the caller to withdraw.
   function availableToWithdraw() public view returns (uint256) {
-    return pendingWithdrawals[msg.sender];
+    return address(this).balance;
   }
 
   function addMinter(address account) public onlyOwner {
@@ -111,8 +126,9 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   /// @param voucher An NFTVoucher to hash.
   function _hash(NFTVoucher calldata voucher) internal view returns (bytes32) {
     return _hashTypedDataV4(keccak256(abi.encode(
-      keccak256("NFTVoucher(uint256 tokenId,uint256 minPrice,string uri)"),
-      voucher.tokenId,
+      keccak256("NFTVoucher(uint256 id, uint256 numberToMint,uint256 minPrice,string uri)"),
+      voucher.id,
+      voucher.numberToMint,
       voucher.minPrice
     )));
   }
