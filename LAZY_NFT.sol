@@ -45,9 +45,8 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   }
 
   /// @notice Redeems an NFTVoucher for an actual NFT, creating it in the process.
-  /// @param redeemer The address of the account which will receive the NFT upon success.
   /// @param voucher A signed NFTVoucher that describes the NFT to be redeemed.
-  function redeem(address redeemer, NFTVoucher calldata voucher) public payable {
+  function redeem(NFTVoucher calldata voucher) public payable {
     // make sure signature is valid and get the address of the signer
     address signer = _verify(voucher);
 
@@ -82,7 +81,7 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
       _setTokenURI(tokenID, mainUri);
       
       // transfer the token to the redeemer
-      _transfer(signer, redeemer, tokenID);
+      _transfer(signer, msg.sender, tokenID);
     }
   }
 
@@ -126,7 +125,7 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   /// @param voucher An NFTVoucher to hash.
   function _hash(NFTVoucher calldata voucher) internal view returns (bytes32) {
     return _hashTypedDataV4(keccak256(abi.encode(
-      keccak256("NFTVoucher(uint256 id, uint256 numberToMint,uint256 minPrice,string uri)"),
+      keccak256("NFTVoucher(uint256 id, uint256 numberToMint,uint256 minPrice)"),
       voucher.id,
       voucher.numberToMint,
       voucher.minPrice
