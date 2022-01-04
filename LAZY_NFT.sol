@@ -10,11 +10,11 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/draft-EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
+contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
 
   bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-  string private constant SIGNING_DOMAIN = "LazyNFT-Voucher";
+  string private constant SIGNING_DOMAIN = "LivinLikeLarryNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
   string private constant oneOfOneReservedUri = "";
   string private constant mainUri = "";
@@ -23,7 +23,7 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   uint256[] private redeemedVouchers;
 
   constructor(address payable minter)
-    ERC721("LazyNFT", "LAZ") 
+    ERC721("LivinLikeLarryNFT", "LLL") 
     EIP712(SIGNING_DOMAIN, SIGNATURE_VERSION) {
       _setupRole(MINTER_ROLE, minter);
       _setupRole(ADMIN_ROLE, msg.sender);
