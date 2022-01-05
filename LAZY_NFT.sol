@@ -16,9 +16,9 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
   string private constant SIGNING_DOMAIN = "LivinLikeLarryNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
-  string private constant oneOfOneReservedUri = "";
-  string private constant mainUri = "";
-  uint256 private constant maxSupply = 4989;
+  string private constant oneOfOneReservedUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
+  string private constant mainUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
+  uint256 private constant maxSupply = 5000;
   uint256 private mintedCount = 0;
   uint256[] private redeemedVouchers;
 
@@ -78,7 +78,7 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
       // first assign the token to the signer, to establish provenance on-chain
       _mint(signer, tokenID);
       mintedCount += 1;
-      _setTokenURI(tokenID, mainUri);
+      _setTokenURI(tokenID, string(abi.encodePacked(mainUri, uintToString(tokenID), ".json")));
       
       // transfer the token to the redeemer
       _transfer(signer, msg.sender, tokenID);
@@ -117,15 +117,34 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   function mintOneOfOneReserved(uint256 tokenId) public onlyOwner returns (uint256)
   {
       _mint(owner(), tokenId);
-      _setTokenURI(tokenId, oneOfOneReservedUri);
+      _setTokenURI(tokenId, string(abi.encodePacked(oneOfOneReservedUri, uintToString(tokenId), ".json")));
+      mintedCount += 1;
       return tokenId;
+  }
+
+  function uintToString(uint256 v) internal pure returns (string memory str) {
+    uint256 maxlength = 100;
+    bytes memory reversed = new bytes(maxlength);
+    uint256 i = 0;
+    while (v != 0) {
+      uint256 remainder = v % 10;
+      v = v / 10;
+      reversed[i++] = bytes1(uint8(48 + remainder));
+    }
+    
+    bytes memory s = new bytes(i);
+    for (uint256 j = 0; j < i; j++) {
+      s[j] = reversed[i - 1 - j];
+    }
+
+    str = string(s);
   }
 
   /// @notice Returns a hash of the given NFTVoucher, prepared using EIP712 typed data hashing rules.
   /// @param voucher An NFTVoucher to hash.
   function _hash(NFTVoucher calldata voucher) internal view returns (bytes32) {
     return _hashTypedDataV4(keccak256(abi.encode(
-      keccak256("NFTVoucher(uint256 id, uint256 numberToMint,uint256 minPrice)"),
+      keccak256("NFTVoucher(uint256 id,uint256 numberToMint,uint256 minPrice)"),
       voucher.id,
       voucher.numberToMint,
       voucher.minPrice
