@@ -10,20 +10,20 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/draft-EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
+contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
 
   bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-  string private constant SIGNING_DOMAIN = "LazyNFT-Voucher";
+  string private constant SIGNING_DOMAIN = "LivinLikeLarryNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
-  string private constant oneOfOneReservedUri = "";
-  string private constant mainUri = "";
-  uint256 private constant maxSupply = 4989;
+  string private constant oneOfOneReservedUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
+  string private constant mainUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
+  uint256 private constant maxSupply = 5000;
   uint256 private mintedCount = 0;
   uint256[] private redeemedVouchers;
 
   constructor(address payable minter)
-    ERC721("LazyNFT", "LAZ") 
+    ERC721("LivinLikeLarryNFT", "LLL") 
     EIP712(SIGNING_DOMAIN, SIGNATURE_VERSION) {
       _setupRole(MINTER_ROLE, minter);
       _setupRole(ADMIN_ROLE, msg.sender);
@@ -45,9 +45,8 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   }
 
   /// @notice Redeems an NFTVoucher for an actual NFT, creating it in the process.
-  /// @param redeemer The address of the account which will receive the NFT upon success.
   /// @param voucher A signed NFTVoucher that describes the NFT to be redeemed.
-  function redeem(address redeemer, NFTVoucher calldata voucher) public payable {
+  function redeem(NFTVoucher calldata voucher) public payable {
     // make sure signature is valid and get the address of the signer
     address signer = _verify(voucher);
 
@@ -79,10 +78,10 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
       // first assign the token to the signer, to establish provenance on-chain
       _mint(signer, tokenID);
       mintedCount += 1;
-      _setTokenURI(tokenID, mainUri);
+      _setTokenURI(tokenID, string(abi.encodePacked(mainUri, uintToString(tokenID), ".json")));
       
       // transfer the token to the redeemer
-      _transfer(signer, redeemer, tokenID);
+      _transfer(signer, msg.sender, tokenID);
     }
   }
 
@@ -118,15 +117,34 @@ contract LazyNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   function mintOneOfOneReserved(uint256 tokenId) public onlyOwner returns (uint256)
   {
       _mint(owner(), tokenId);
-      _setTokenURI(tokenId, oneOfOneReservedUri);
+      _setTokenURI(tokenId, string(abi.encodePacked(oneOfOneReservedUri, uintToString(tokenId), ".json")));
+      mintedCount += 1;
       return tokenId;
+  }
+
+  function uintToString(uint256 v) internal pure returns (string memory str) {
+    uint256 maxlength = 100;
+    bytes memory reversed = new bytes(maxlength);
+    uint256 i = 0;
+    while (v != 0) {
+      uint256 remainder = v % 10;
+      v = v / 10;
+      reversed[i++] = bytes1(uint8(48 + remainder));
+    }
+    
+    bytes memory s = new bytes(i);
+    for (uint256 j = 0; j < i; j++) {
+      s[j] = reversed[i - 1 - j];
+    }
+
+    str = string(s);
   }
 
   /// @notice Returns a hash of the given NFTVoucher, prepared using EIP712 typed data hashing rules.
   /// @param voucher An NFTVoucher to hash.
   function _hash(NFTVoucher calldata voucher) internal view returns (bytes32) {
     return _hashTypedDataV4(keccak256(abi.encode(
-      keccak256("NFTVoucher(uint256 id, uint256 numberToMint,uint256 minPrice,string uri)"),
+      keccak256("NFTVoucher(uint256 id,uint256 numberToMint,uint256 minPrice)"),
       voucher.id,
       voucher.numberToMint,
       voucher.minPrice
