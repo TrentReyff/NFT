@@ -2,18 +2,15 @@
 pragma solidity ^0.8.0;
 pragma abicoder v2; // required to accept structs as function parameters
 
-import "hardhat/console.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/draft-EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
+contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
+  using Strings for uint256;
 
-  bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
-  bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+  address payable private _minter;
   string private constant SIGNING_DOMAIN = "LivinLikeLarryNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
   string private constant reservedUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
@@ -24,12 +21,10 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   uint256 private reservedMintedCount = 0;
   uint256[] private redeemedVouchers;
 
-  constructor(address payable minter)
-    ERC721("LivinLikeLarryNFT", "LLL") 
+  constructor(address payable startingMinter)
+    ERC721("LivinLikeLarry", "LLL") 
     EIP712(SIGNING_DOMAIN, SIGNATURE_VERSION) {
-      _setupRole(MINTER_ROLE, minter);
-      _setupRole(ADMIN_ROLE, msg.sender);
-      _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);
+      _minter = startingMinter;
     }
   /// @notice Represents an un-minted NFT, which has not yet been recorded into the blockchain. A signed voucher can be redeemed for a real NFT using the redeem function.
   struct NFTVoucher {
@@ -43,6 +38,14 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     bytes signature;
   }
 
+  function minter() public view returns (address payable) {
+    return _minter;
+  }
+
+  function setMinter(address payable newMinter) public onlyOwner {
+    _minter = newMinter;
+  }
+
   /// @notice Redeems an NFTVoucher for an actual NFT, creating it in the process.
   /// @param voucher A signed NFTVoucher that describes the NFT to be redeemed.
   function redeem(NFTVoucher calldata voucher) public payable {
@@ -50,7 +53,7 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     address signer = _verify(voucher);
 
     // make sure that the signer is authorized to mint NFTs
-    require(hasRole(MINTER_ROLE, signer), "Signature invalid or unauthorized");
+    require(minter() == signer, "Signature invalid or unauthorized");
 
     // cant mint more than max
     require(publicMintedCount + voucher.numberToMint <= maxPublicSupply, "max supply reached");
@@ -77,10 +80,19 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
       // first assign the token to the signer, to establish provenance on-chain
       _mint(signer, tokenID);
       publicMintedCount += 1;
-      _setTokenURI(tokenID, string(abi.encodePacked(mainUri, uintToString(tokenID), ".json")));
       
       // transfer the token to the redeemer
       _transfer(signer, msg.sender, tokenID);
+    }
+  }
+
+  function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
+    if (tokenId <= maxPublicSupply) {
+      return string(abi.encodePacked(mainUri, tokenId.toString(), ".json"));
+    }
+    else {
+      return string(abi.encodePacked(reservedUri, tokenId.toString(), ".json"));
     }
   }
 
@@ -97,20 +109,7 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
 
   /// @notice Transfers all pending withdrawal balance to the caller. Reverts if the caller is not an authorized minter.
   function withdraw() public onlyOwner {
-    payable(msg.sender).transfer(address(this).balance);
-  }
-
-  /// @notice Retuns the amount of Ether available to the caller to withdraw.
-  function availableToWithdraw() public view returns (uint256) {
-    return address(this).balance;
-  }
-
-  function addMinter(address account) public onlyOwner {
-    grantRole(MINTER_ROLE, account);
-  }
-
-  function removeMinter(address account) public onlyOwner {
-    revokeRole(MINTER_ROLE, account);
+    payable(_msgSender()).transfer(address(this).balance);
   }
 
   function mintReserved() public onlyOwner returns (uint256)
@@ -121,29 +120,9 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
 
     _mint(owner(), tokenID);
 
-    _setTokenURI(tokenID, string(abi.encodePacked(reservedUri, uintToString(tokenID), ".json")));
-
     reservedMintedCount += 1;
     
     return tokenID;
-  }
-
-  function uintToString(uint256 v) internal pure returns (string memory str) {
-    uint256 maxlength = 100;
-    bytes memory reversed = new bytes(maxlength);
-    uint256 i = 0;
-    while (v != 0) {
-      uint256 remainder = v % 10;
-      v = v / 10;
-      reversed[i++] = bytes1(uint8(48 + remainder));
-    }
-    
-    bytes memory s = new bytes(i);
-    for (uint256 j = 0; j < i; j++) {
-      s[j] = reversed[i - 1 - j];
-    }
-
-    str = string(s);
   }
 
   /// @notice Returns a hash of the given NFTVoucher, prepared using EIP712 typed data hashing rules.
@@ -173,9 +152,5 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   function _verify(NFTVoucher calldata voucher) internal view returns (address) {
     bytes32 digest = _hash(voucher);
     return ECDSA.recover(digest, voucher.signature);
-  }
-
-  function supportsInterface(bytes4 interfaceId) public view virtual override (AccessControl, ERC721) returns (bool) {
-    return ERC721.supportsInterface(interfaceId) || AccessControl.supportsInterface(interfaceId);
   }
 }
