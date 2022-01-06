@@ -56,7 +56,7 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     require(publicMintedCount + voucher.numberToMint <= maxPublicSupply, "max supply reached");
 
     // make sure that the redeemer is paying enough to cover the buyer's cost
-    require(msg.value >= 0.05 ether * voucher.numberToMint, "Insufficient funds to redeem");
+    require(msg.value == 0.05 ether * voucher.numberToMint, "Insufficient funds to redeem");
 
     // make sure they didn't put in a negative number somehow...
     require(voucher.numberToMint > 0, "Must mint at least one NFT");
