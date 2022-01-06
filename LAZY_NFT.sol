@@ -16,10 +16,12 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
   string private constant SIGNING_DOMAIN = "LivinLikeLarryNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
-  string private constant oneOfOneReservedUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
+  string private constant reservedUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
   string private constant mainUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
-  uint256 private constant maxSupply = 5000;
-  uint256 private mintedCount = 0;
+  uint256 private constant maxPublicSupply = 4900;
+  uint256 private constant maxReservedSupply = 100;
+  uint256 private publicMintedCount = 0;
+  uint256 private reservedMintedCount = 0;
   uint256[] private redeemedVouchers;
 
   constructor(address payable minter)
@@ -37,9 +39,6 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     /// @notice The number of tokens to mint. 
     uint256 numberToMint;
 
-    /// @notice The minimum price (in wei) that must be paid to mint EACH NFT. Total price will be minPrice * numberToMint
-    uint256 minPrice;
-
     /// @notice the EIP-712 signature of all other fields in the NFTVoucher struct. For a voucher to be valid, it must be signed by an account with the MINTER_ROLE.
     bytes signature;
   }
@@ -54,10 +53,10 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     require(hasRole(MINTER_ROLE, signer), "Signature invalid or unauthorized");
 
     // cant mint more than max
-    require(mintedCount + voucher.numberToMint <= maxSupply, "max supply reached");
+    require(publicMintedCount + voucher.numberToMint <= maxPublicSupply, "max supply reached");
 
     // make sure that the redeemer is paying enough to cover the buyer's cost
-    require(msg.value >= voucher.minPrice * voucher.numberToMint, "Insufficient funds to redeem");
+    require(msg.value >= 0.05 ether * voucher.numberToMint, "Insufficient funds to redeem");
 
     // make sure they didn't put in a negative number somehow...
     require(voucher.numberToMint > 0, "Must mint at least one NFT");
@@ -70,14 +69,14 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     redeemedVouchers.push(voucher.id);
 
     // Set the tokenID to the last tokenID, we'll increment it before creating a new one in the loop below.
-    uint256 tokenID = mintedCount;
+    uint256 tokenID = publicMintedCount;
 
     for (uint256 i = 0; i < voucher.numberToMint; i++) {
       tokenID++;
 
       // first assign the token to the signer, to establish provenance on-chain
       _mint(signer, tokenID);
-      mintedCount += 1;
+      publicMintedCount += 1;
       _setTokenURI(tokenID, string(abi.encodePacked(mainUri, uintToString(tokenID), ".json")));
       
       // transfer the token to the redeemer
@@ -114,12 +113,19 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
     revokeRole(MINTER_ROLE, account);
   }
 
-  function mintOneOfOneReserved(uint256 tokenId) public onlyOwner returns (uint256)
+  function mintReserved() public onlyOwner returns (uint256)
   {
-      _mint(owner(), tokenId);
-      _setTokenURI(tokenId, string(abi.encodePacked(oneOfOneReservedUri, uintToString(tokenId), ".json")));
-      mintedCount += 1;
-      return tokenId;
+    require(reservedMintedCount < maxReservedSupply, "Max reserved supply reached.");
+
+    uint256 tokenID = 4900 + reservedMintedCount + 1;
+
+    _mint(owner(), tokenID);
+
+    _setTokenURI(tokenID, string(abi.encodePacked(reservedUri, uintToString(tokenID), ".json")));
+
+    reservedMintedCount += 1;
+    
+    return tokenID;
   }
 
   function uintToString(uint256 v) internal pure returns (string memory str) {
@@ -144,10 +150,9 @@ contract LivinLikeLarryNFT is ERC721URIStorage, EIP712, AccessControl, Ownable {
   /// @param voucher An NFTVoucher to hash.
   function _hash(NFTVoucher calldata voucher) internal view returns (bytes32) {
     return _hashTypedDataV4(keccak256(abi.encode(
-      keccak256("NFTVoucher(uint256 id,uint256 numberToMint,uint256 minPrice)"),
+      keccak256("NFTVoucher(uint256 id,uint256 numberToMint)"),
       voucher.id,
-      voucher.numberToMint,
-      voucher.minPrice
+      voucher.numberToMint
     )));
   }
 
