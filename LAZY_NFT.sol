@@ -13,13 +13,13 @@ contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
   address payable private _minter;
   string private constant SIGNING_DOMAIN = "LivinLikeLarryNFT-Voucher";
   string private constant SIGNATURE_VERSION = "1";
-  string private constant reservedUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
-  string private constant mainUri = "ipfs://Qmd52XEVD878gQL6o3cAVbz5tWyhNHQ6iWGFTpg1hNPm2j/";
+  string private constant mainUri = "ipfs://QmcsvZ3ofFTMhyZw7xFqcHHR96GSQqA65fBB1aKwiRZAhY/";
   uint256 private constant maxPublicSupply = 4900;
   uint256 private constant maxReservedSupply = 100;
   uint256 private publicMintedCount = 0;
   uint256 private reservedMintedCount = 0;
   uint256[] private redeemedVouchers;
+  bool private publicMintingEnabled = false;
 
   constructor(address payable startingMinter)
     ERC721("LivinLikeLarry", "LLL") 
@@ -38,6 +38,10 @@ contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
     bytes signature;
   }
 
+  function enablePublicMinting(bool enabled) public onlyOwner {
+    publicMintingEnabled = enabled;
+  }
+
   function minter() public view returns (address payable) {
     return _minter;
   }
@@ -49,6 +53,8 @@ contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
   /// @notice Redeems an NFTVoucher for an actual NFT, creating it in the process.
   /// @param voucher A signed NFTVoucher that describes the NFT to be redeemed.
   function redeem(NFTVoucher calldata voucher) public payable {
+    require(publicMintingEnabled, "Public minting is currently disabled.");
+
     // make sure signature is valid and get the address of the signer
     address signer = _verify(voucher);
 
@@ -88,12 +94,8 @@ contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
 
   function tokenURI(uint256 tokenId) public view override returns (string memory) {
     require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
-    if (tokenId <= maxPublicSupply) {
-      return string(abi.encodePacked(mainUri, tokenId.toString(), ".json"));
-    }
-    else {
-      return string(abi.encodePacked(reservedUri, tokenId.toString(), ".json"));
-    }
+    
+    return string(abi.encodePacked(mainUri, tokenId.toString(), ".json"));
   }
 
   // Checks the list of redeemed voucher IDs to see if the voucherID specified is in there.
@@ -112,15 +114,23 @@ contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
     payable(_msgSender()).transfer(address(this).balance);
   }
 
-  function mintReserved() public onlyOwner returns (uint256)
+  uint256 private constant sectionSize = 20;
+
+  function mintReserved(uint256 section) public onlyOwner returns (uint256)
   {
     require(reservedMintedCount < maxReservedSupply, "Max reserved supply reached.");
 
-    uint256 tokenID = 4900 + reservedMintedCount + 1;
+    require(section > 0 && section <= 5, "Section numbers are 1-5.");
 
-    _mint(owner(), tokenID);
+    uint256 tokenID = 4900 + (sectionSize * (section - 1)) + 1;
 
-    reservedMintedCount += 1;
+    require(!_exists(tokenID), "Section already minted."); 
+
+    for (uint256 i = 0; i < sectionSize; i++) {
+      _mint(owner(), tokenID);
+      tokenID += 1;
+      reservedMintedCount += 1;
+    }
     
     return tokenID;
   }
