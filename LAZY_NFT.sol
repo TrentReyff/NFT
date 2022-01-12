@@ -38,6 +38,10 @@ contract LivinLikeLarryNFT is ERC721, EIP712, Ownable {
     bytes signature;
   }
 
+  function publicTokensMinted() public view returns (uint256) {
+    return publicMintedCount;
+  }
+
   function enablePublicMinting(bool enabled) public onlyOwner {
     publicMintingEnabled = enabled;
   }
